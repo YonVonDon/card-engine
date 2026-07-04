@@ -17,7 +17,6 @@ const Scene: React.FC = () => {
     setPointer({ x: e.clientX, y: e.clientY });
   }
 
-  // ⭐ Bring card to front when dragging starts
   function bringToFront(id: string) {
     setCards((prev) => {
       const maxZ = Math.max(...prev.map((c) => c.z));
@@ -27,7 +26,6 @@ const Scene: React.FC = () => {
     });
   }
 
-  // ⭐ Spawn a new card at a random position
   function addCard() {
     if (!sceneRef.current) return;
 
@@ -53,7 +51,7 @@ const Scene: React.FC = () => {
       style={{
         width: "100vw",
         height: "100vh",
-        background: "#111",
+        background: "#4a4a4a", // Hearthstone board grey
         position: "relative",
         overflow: "hidden",
       }}
@@ -81,8 +79,8 @@ const Scene: React.FC = () => {
           initialX={card.x}
           initialY={card.y}
           pointer={pointer}
-          onDragStart={() => bringToFront(card.id)}   // ⭐ NEW
-          zIndex={card.z}                             // ⭐ NEW
+          onDragStart={() => bringToFront(card.id)}
+          zIndex={card.z}
         />
       ))}
     </div>
