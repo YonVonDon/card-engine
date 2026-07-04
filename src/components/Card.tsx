@@ -5,11 +5,22 @@ interface CardProps {
   initialX?: number;
   initialY?: number;
   pointer: { x: number; y: number };
+
+  // ⭐ NEW PROPS
+  zIndex: number;
+  bringToFront: (id: string) => void;
 }
 
-const DRAG_THRESHOLD = 2; // movement required before dragging starts
+const DRAG_THRESHOLD = 2;
 
-const Card: React.FC<CardProps> = ({ id, initialX = 300, initialY = 200, pointer }) => {
+const Card: React.FC<CardProps> = ({
+  id,
+  initialX = 300,
+  initialY = 200,
+  pointer,
+  zIndex,
+  bringToFront
+}) => {
   const cardRef = useRef<HTMLDivElement>(null);
 
   // POSITION + DRAGGING
@@ -17,7 +28,6 @@ const Card: React.FC<CardProps> = ({ id, initialX = 300, initialY = 200, pointer
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
-  // store pointer position at click time
   const [clickStart, setClickStart] = useState<{ x: number; y: number } | null>(null);
 
   // HOVER / TILT / GLOW
@@ -31,27 +41,22 @@ const Card: React.FC<CardProps> = ({ id, initialX = 300, initialY = 200, pointer
   const [glowFollowX, setGlowFollowX] = useState(0);
   const [glowFollowY, setGlowFollowY] = useState(0);
 
-  // FLIP STATE
   const [isFlipped, setIsFlipped] = useState(false);
 
-  // Freeze hover until pointer moves again
   const [hoverFrozen, setHoverFrozen] = useState(false);
 
   // -----------------------------
-  // LEFT CLICK ONLY → DRAG START
+  // LEFT CLICK → DRAG START
   // -----------------------------
   function onPointerDown(e: React.PointerEvent) {
-    if (e.button !== 0) return; // left-click only
+    if (e.button !== 0) return;
 
     const rect = cardRef.current!.getBoundingClientRect();
 
     setHoverFrozen(true);
     resetHoverEffects();
 
-    // store click position
     setClickStart({ x: pointer.x, y: pointer.y });
-
-    // do NOT start dragging yet
     setIsDragging(false);
 
     setDragOffset({
@@ -61,7 +66,7 @@ const Card: React.FC<CardProps> = ({ id, initialX = 300, initialY = 200, pointer
   }
 
   // -----------------------------
-  // GLOBAL POINTERUP → ALWAYS DROP CARD
+  // GLOBAL POINTERUP
   // -----------------------------
   useEffect(() => {
     function handlePointerUp() {
@@ -75,7 +80,7 @@ const Card: React.FC<CardProps> = ({ id, initialX = 300, initialY = 200, pointer
   }, []);
 
   // -----------------------------
-  // RIGHT CLICK → FLIP ONLY
+  // RIGHT CLICK → FLIP
   // -----------------------------
   function onRightClick(e: React.MouseEvent) {
     e.preventDefault();
@@ -101,7 +106,7 @@ const Card: React.FC<CardProps> = ({ id, initialX = 300, initialY = 200, pointer
   }, [pointer.x, pointer.y]);
 
   // -----------------------------
-  // DRAG MOVEMENT WITH THRESHOLD
+  // DRAG MOVEMENT + STACKING TRIGGER
   // -----------------------------
   useEffect(() => {
     if (!clickStart) return;
@@ -109,9 +114,10 @@ const Card: React.FC<CardProps> = ({ id, initialX = 300, initialY = 200, pointer
     const dx = Math.abs(pointer.x - clickStart.x);
     const dy = Math.abs(pointer.y - clickStart.y);
 
-    // only start dragging if movement exceeds threshold
+    // ⭐ Only reorder when dragging actually begins
     if (!isDragging && (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD)) {
       setIsDragging(true);
+      bringToFront(id); // ⭐ NEW: stacking trigger
     }
 
     if (isDragging) {
@@ -120,7 +126,7 @@ const Card: React.FC<CardProps> = ({ id, initialX = 300, initialY = 200, pointer
         y: pointer.y - dragOffset.y,
       });
     }
-  }, [pointer, clickStart, isDragging, dragOffset]);
+  }, [pointer, clickStart, isDragging, dragOffset, bringToFront, id]);
 
   // -----------------------------
   // HOVER / TILT / GLOW
@@ -142,7 +148,6 @@ const Card: React.FC<CardProps> = ({ id, initialX = 300, initialY = 200, pointer
       clientY > rect.top - radius &&
       clientY < rect.bottom + radius;
 
-    // ⭐ If dragging → NO hover, NO glow, NO tilt, NO scale
     if (isDragging) {
       setIsHovering(false);
       setTiltX(0);
@@ -178,9 +183,6 @@ const Card: React.FC<CardProps> = ({ id, initialX = 300, initialY = 200, pointer
     setGlowY(followY);
   }, [pointer, hoverFrozen, isDragging, isFlipped]);
 
-  // -----------------------------
-  // RESET HOVER EFFECTS
-  // -----------------------------
   function resetHoverEffects() {
     setIsHovering(false);
     setTiltX(0);
@@ -202,6 +204,7 @@ const Card: React.FC<CardProps> = ({ id, initialX = 300, initialY = 200, pointer
         top: position.y,
         width: "300px",
         height: "400px",
+        zIndex, // ⭐ NEW: stacking applied here
       }}
     >
       <div
