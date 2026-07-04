@@ -6,7 +6,10 @@ interface CardProps {
   initialY?: number;
   pointer: { x: number; y: number };
   onDragStart?: () => void;
+  onPositionChange?: (x: number, y: number) => void;
   zIndex?: number;
+  idleEnabled: boolean;
+  idleSpeed: number;   // ⭐ NEW
 }
 
 const DRAG_THRESHOLD = 2;
@@ -17,7 +20,10 @@ const Card: React.FC<CardProps> = ({
   initialY = 200,
   pointer,
   onDragStart,
+  onPositionChange,
   zIndex = 1,
+  idleEnabled,
+  idleSpeed,
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -37,20 +43,20 @@ const Card: React.FC<CardProps> = ({
   const [glowFollowY, setGlowFollowY] = useState(0);
 
   const [isFlipped, setIsFlipped] = useState(false);
-
   const [hoverFrozen, setHoverFrozen] = useState(false);
 
   const [idleOffsetX, setIdleOffsetX] = useState(0);
   const [idleOffsetY, setIdleOffsetY] = useState(0);
 
+  // ⭐ Idle bobbing (only when not hovered)
   useEffect(() => {
     let t = 0;
     let frame: number;
 
     function animate() {
-      t += 0.015;
+      t += 0.015 * idleSpeed;
 
-      if (!isDragging) {
+      if (!isDragging && idleEnabled && !isHovering) {
         setIdleOffsetX(Math.sin(t) * 3);
         setIdleOffsetY(Math.cos(t * 0.8) * 6);
       } else {
@@ -63,8 +69,9 @@ const Card: React.FC<CardProps> = ({
 
     frame = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(frame);
-  }, [isDragging]);
+  }, [isDragging, idleEnabled, idleSpeed, isHovering]);
 
+  // Drag physics
   useEffect(() => {
     let frame: number;
 
@@ -79,6 +86,7 @@ const Card: React.FC<CardProps> = ({
         const newY = position.y + (targetY - position.y) * LERP;
 
         setPosition({ x: newX, y: newY });
+        onPositionChange?.(newX, newY);
 
         const dx = targetX - newX;
         const dy = targetY - newY;
@@ -93,7 +101,7 @@ const Card: React.FC<CardProps> = ({
 
     frame = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(frame);
-  }, [isDragging, pointer, dragOffset, position]);
+  }, [isDragging, pointer, dragOffset, position, onPositionChange]);
 
   function onPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return;
@@ -117,6 +125,7 @@ const Card: React.FC<CardProps> = ({
       setIsDragging(false);
       setClickStart(null);
       resetHoverEffects();
+      setHoverFrozen(false);
     }
 
     window.addEventListener("pointerup", handlePointerUp);
@@ -137,11 +146,11 @@ const Card: React.FC<CardProps> = ({
 
       return newFlip;
     });
-  }
 
-  useEffect(() => {
-    setHoverFrozen(false);
-  }, [pointer.x, pointer.y]);
+    setTimeout(() => {
+      setHoverFrozen(false);
+    }, 0);
+  }
 
   useEffect(() => {
     if (!clickStart) return;
@@ -155,6 +164,7 @@ const Card: React.FC<CardProps> = ({
     }
   }, [pointer, clickStart, isDragging, onDragStart]);
 
+  // Hover + glow
   useEffect(() => {
     if (isDragging || hoverFrozen) {
       setIsHovering(false);
@@ -214,18 +224,10 @@ const Card: React.FC<CardProps> = ({
   const shadowBlur = isDragging ? 40 : 25;
   const shadowSize = isDragging ? 50 : 35;
 
-  const glowShadow = isHovering
-    ? `${glowX}px ${glowY}px 50px rgba(255,255,255,0.35)`
-    : "";
-
   const dynamicShadow = `
     ${shadowOffsetX}px ${shadowOffsetY}px ${shadowBlur}px rgba(0,0,0,0.45),
     0 0 ${shadowSize}px rgba(0,0,0,0.35)
   `;
-
-  const combinedShadows = glowShadow
-    ? `${glowShadow}, ${dynamicShadow}`
-    : dynamicShadow;
 
   return (
     <div
@@ -238,23 +240,34 @@ const Card: React.FC<CardProps> = ({
         zIndex,
       }}
     >
+      {isHovering && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "20px",
+            pointerEvents: "none",
+            transform: `translate(${glowX}px, ${glowY}px)`,
+            filter: "blur(40px)",
+            opacity: 1,
+            background: isFlipped
+              ? "rgba(0,200,255,0.35)"
+              : "rgba(255,255,255,0.35)",
+            zIndex: 0,
+          }}
+        />
+      )}
+
       <div
         ref={cardRef}
         onPointerDown={onPointerDown}
         onContextMenu={onRightClick}
         style={{
-          width: "100%",
-          height: "100%",
+          position: "absolute",
+          inset: 0,
           borderRadius: "20px",
           overflow: "hidden",
           transformStyle: "preserve-3d",
-
-          userSelect: "none",
-          WebkitUserSelect: "none",
-          MozUserSelect: "none",
-          msUserSelect: "none",
-          outline: "none",
-          WebkitTapHighlightColor: "transparent",
 
           transform: `
             perspective(800px)
@@ -267,32 +280,28 @@ const Card: React.FC<CardProps> = ({
             ? "none"
             : "transform 0.2s cubic-bezier(0.22, 1, 0.36, 1)",
 
-          boxShadow: combinedShadows,
+          boxShadow: dynamicShadow,
         }}
       >
         <div
           style={{
             position: "absolute",
-            width: "102%",
-            height: "102%",
-            left: "-1%",
-            top: "-1%",
+            inset: 0,
             backfaceVisibility: "hidden",
             transform: `rotateY(${isFlipped ? 180 : 0}deg)`,
             background: "linear-gradient(135deg, #ff8a00, #e52e71)",
+            zIndex: 1,
           }}
         />
 
         <div
           style={{
             position: "absolute",
-            width: "102%",
-            height: "102%",
-            left: "-1%",
-            top: "-1%",
+            inset: 0,
             backfaceVisibility: "hidden",
             transform: `rotateY(${isFlipped ? 0 : 180}deg)`,
             background: "linear-gradient(135deg, #222, #555)",
+            zIndex: 1,
           }}
         />
       </div>
