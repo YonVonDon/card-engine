@@ -1,51 +1,54 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import Card from "./Card";
 
 const Scene: React.FC = () => {
+  const sceneRef = useRef<HTMLDivElement>(null);
+
   const [pointer, setPointer] = useState({ x: 0, y: 0 });
 
-  // ⭐ Dynamic card list
-  const [cards, setCards] = useState([
-    { id: "1", x: 300, y: 200 },
-    { id: "2", x: 700, y: 300 },
+  const [cards, setCards] = useState<
+    { id: string; x: number; y: number; z: number }[]
+  >([
+    { id: "1", x: 300, y: 200, z: 1 },
+    { id: "2", x: 700, y: 300, z: 2 },
   ]);
-
-  // ⭐ Z-INDEX MANAGEMENT
-  const [zOrder, setZOrder] = useState<Record<string, number>>({});
-  const [topZ, setTopZ] = useState(1);
-
-  function bringToFront(id: string) {
-    setZOrder(prev => {
-      const newZ = topZ + 1;
-      return { ...prev, [id]: newZ };
-    });
-    setTopZ(prev => prev + 1);
-  }
-
-  // ⭐ Add a new card at a random position
-  function addCard() {
-    const newId = crypto.randomUUID();
-
-    // Card size is 300x400, so we keep it fully visible
-    const padding = 50;
-
-    const x = Math.random() * (window.innerWidth - 300 - padding) + padding;
-    const y = Math.random() * (window.innerHeight - 400 - padding) + padding;
-
-    const newCard = { id: newId, x, y };
-
-    setCards(prev => [...prev, newCard]);
-
-    // Make it top-most immediately
-    bringToFront(newId);
-  }
 
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
     setPointer({ x: e.clientX, y: e.clientY });
   }
 
+  // ⭐ Bring card to front when dragging starts
+  function bringToFront(id: string) {
+    setCards((prev) => {
+      const maxZ = Math.max(...prev.map((c) => c.z));
+      return prev.map((c) =>
+        c.id === id ? { ...c, z: maxZ + 1 } : c
+      );
+    });
+  }
+
+  // ⭐ Spawn a new card at a random position
+  function addCard() {
+    if (!sceneRef.current) return;
+
+    const rect = sceneRef.current.getBoundingClientRect();
+
+    const x = Math.random() * (rect.width - 300);
+    const y = Math.random() * (rect.height - 400);
+
+    const newId = crypto.randomUUID();
+
+    const maxZ = Math.max(...cards.map((c) => c.z));
+
+    setCards((prev) => [
+      ...prev,
+      { id: newId, x, y, z: maxZ + 1 },
+    ]);
+  }
+
   return (
     <div
+      ref={sceneRef}
       onPointerMove={onPointerMove}
       style={{
         width: "100vw",
@@ -55,36 +58,31 @@ const Scene: React.FC = () => {
         overflow: "hidden",
       }}
     >
-      {/* ⭐ FIXED BUTTON */}
       <button
         onClick={addCard}
         style={{
-          position: "fixed",
-          top: "20px",
-          left: "20px",
-          padding: "10px 18px",
+          position: "absolute",
+          top: 20,
+          left: 20,
+          zIndex: 9999,
+          padding: "10px 20px",
           fontSize: "16px",
           borderRadius: "8px",
-          background: "#ff8a00",
-          color: "#fff",
-          border: "none",
           cursor: "pointer",
-          zIndex: 9999,
         }}
       >
         Add Card
       </button>
 
-      {/* ⭐ Render all cards */}
-      {cards.map(card => (
+      {cards.map((card) => (
         <Card
           key={card.id}
           id={card.id}
           initialX={card.x}
           initialY={card.y}
           pointer={pointer}
-          zIndex={zOrder[card.id] || 1}
-          bringToFront={bringToFront}
+          onDragStart={() => bringToFront(card.id)}   // ⭐ NEW
+          zIndex={card.z}                             // ⭐ NEW
         />
       ))}
     </div>

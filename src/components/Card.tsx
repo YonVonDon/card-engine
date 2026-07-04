@@ -5,10 +5,8 @@ interface CardProps {
   initialX?: number;
   initialY?: number;
   pointer: { x: number; y: number };
-
-  // ⭐ NEW PROPS
-  zIndex: number;
-  bringToFront: (id: string) => void;
+  onDragStart?: () => void;     // ⭐ NEW
+  zIndex?: number;              // ⭐ NEW
 }
 
 const DRAG_THRESHOLD = 2;
@@ -18,8 +16,8 @@ const Card: React.FC<CardProps> = ({
   initialX = 300,
   initialY = 200,
   pointer,
-  zIndex,
-  bringToFront
+  onDragStart,
+  zIndex = 1,                  // ⭐ NEW default
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -41,12 +39,14 @@ const Card: React.FC<CardProps> = ({
   const [glowFollowX, setGlowFollowX] = useState(0);
   const [glowFollowY, setGlowFollowY] = useState(0);
 
+  // FLIP
   const [isFlipped, setIsFlipped] = useState(false);
 
+  // Freeze hover until pointer moves again
   const [hoverFrozen, setHoverFrozen] = useState(false);
 
   // -----------------------------
-  // LEFT CLICK → DRAG START
+  // LEFT CLICK → DRAG START PREP
   // -----------------------------
   function onPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return;
@@ -66,7 +66,7 @@ const Card: React.FC<CardProps> = ({
   }
 
   // -----------------------------
-  // GLOBAL POINTERUP
+  // GLOBAL POINTERUP → DROP CARD
   // -----------------------------
   useEffect(() => {
     function handlePointerUp() {
@@ -106,7 +106,7 @@ const Card: React.FC<CardProps> = ({
   }, [pointer.x, pointer.y]);
 
   // -----------------------------
-  // DRAG MOVEMENT + STACKING TRIGGER
+  // DRAG MOVEMENT + THRESHOLD
   // -----------------------------
   useEffect(() => {
     if (!clickStart) return;
@@ -114,10 +114,10 @@ const Card: React.FC<CardProps> = ({
     const dx = Math.abs(pointer.x - clickStart.x);
     const dy = Math.abs(pointer.y - clickStart.y);
 
-    // ⭐ Only reorder when dragging actually begins
+    // ⭐ NEW: notify Scene when drag actually begins
     if (!isDragging && (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD)) {
       setIsDragging(true);
-      bringToFront(id); // ⭐ NEW: stacking trigger
+      onDragStart?.();   // ⭐ NEW
     }
 
     if (isDragging) {
@@ -126,7 +126,7 @@ const Card: React.FC<CardProps> = ({
         y: pointer.y - dragOffset.y,
       });
     }
-  }, [pointer, clickStart, isDragging, dragOffset, bringToFront, id]);
+  }, [pointer, clickStart, isDragging, dragOffset, onDragStart]);
 
   // -----------------------------
   // HOVER / TILT / GLOW
@@ -183,6 +183,9 @@ const Card: React.FC<CardProps> = ({
     setGlowY(followY);
   }, [pointer, hoverFrozen, isDragging, isFlipped]);
 
+  // -----------------------------
+  // RESET HOVER EFFECTS
+  // -----------------------------
   function resetHoverEffects() {
     setIsHovering(false);
     setTiltX(0);
@@ -204,7 +207,7 @@ const Card: React.FC<CardProps> = ({
         top: position.y,
         width: "300px",
         height: "400px",
-        zIndex, // ⭐ NEW: stacking applied here
+        zIndex,                 // ⭐ NEW
       }}
     >
       <div
