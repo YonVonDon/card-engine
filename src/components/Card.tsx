@@ -1,15 +1,23 @@
 import React, { useState, useRef, useEffect } from "react";
 
+// GLOBAL: only one card can glow at a time
+let activeGlowId: string | null = null;
+
 interface CardProps {
   id: string;
   initialX?: number;
   initialY?: number;
   pointer: { x: number; y: number };
   onDragStart?: () => void;
+  onDragEnd?: (x: number, y: number) => void;
   onPositionChange?: (x: number, y: number) => void;
+  onFlipChange?: (flipped: boolean) => void;
   zIndex?: number;
   idleEnabled: boolean;
-  idleSpeed: number;   // ⭐ NEW
+  idleSpeed: number;
+  flipped?: boolean;
+  startDragging?: boolean;
+  inDeck: boolean;
 }
 
 const DRAG_THRESHOLD = 2;
@@ -20,10 +28,15 @@ const Card: React.FC<CardProps> = ({
   initialY = 200,
   pointer,
   onDragStart,
+  onDragEnd,
   onPositionChange,
+  onFlipChange,
   zIndex = 1,
   idleEnabled,
   idleSpeed,
+  flipped = false,
+  startDragging = false,
+  inDeck,
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -42,13 +55,27 @@ const Card: React.FC<CardProps> = ({
   const [glowFollowX, setGlowFollowX] = useState(0);
   const [glowFollowY, setGlowFollowY] = useState(0);
 
-  const [isFlipped, setIsFlipped] = useState(false);
+  const [isFlipped, setIsFlipped] = useState(flipped);
   const [hoverFrozen, setHoverFrozen] = useState(false);
 
   const [idleOffsetX, setIdleOffsetX] = useState(0);
   const [idleOffsetY, setIdleOffsetY] = useState(0);
 
-  // ⭐ Idle bobbing (only when not hovered)
+  useEffect(() => {
+    setPosition({ x: initialX, y: initialY });
+  }, [initialX, initialY]);
+
+  useEffect(() => {
+    if (startDragging) {
+      setIsDragging(true);
+      setDragOffset({
+        x: pointer.x - position.x,
+        y: pointer.y - position.y,
+      });
+      activeGlowId = id; // dragging card keeps glow
+    }
+  }, [startDragging]);
+
   useEffect(() => {
     let t = 0;
     let frame: number;
@@ -71,7 +98,6 @@ const Card: React.FC<CardProps> = ({
     return () => cancelAnimationFrame(frame);
   }, [isDragging, idleEnabled, idleSpeed, isHovering]);
 
-  // Drag physics
   useEffect(() => {
     let frame: number;
 
@@ -118,19 +144,27 @@ const Card: React.FC<CardProps> = ({
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
     });
+
+    onDragStart?.();
   }
 
   useEffect(() => {
     function handlePointerUp() {
+      if (isDragging) {
+        onDragEnd?.(position.x, position.y);
+      }
+
       setIsDragging(false);
       setClickStart(null);
       resetHoverEffects();
       setHoverFrozen(false);
+
+      if (activeGlowId === id) activeGlowId = null;
     }
 
     window.addEventListener("pointerup", handlePointerUp);
     return () => window.removeEventListener("pointerup", handlePointerUp);
-  }, []);
+  }, [isDragging, position, onDragEnd, id]);
 
   function onRightClick(e: React.MouseEvent) {
     e.preventDefault();
@@ -143,6 +177,8 @@ const Card: React.FC<CardProps> = ({
 
       setGlowX(newFlip ? -glowFollowX : glowFollowX);
       setGlowY(glowFollowY);
+
+      onFlipChange?.(newFlip);
 
       return newFlip;
     });
@@ -160,13 +196,20 @@ const Card: React.FC<CardProps> = ({
 
     if (!isDragging && (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD)) {
       setIsDragging(true);
+      activeGlowId = id; // dragging card keeps glow
       onDragStart?.();
     }
-  }, [pointer, clickStart, isDragging, onDragStart]);
+  }, [pointer, clickStart, isDragging, onDragStart, id]);
 
-  // Hover + glow
   useEffect(() => {
-    if (isDragging || hoverFrozen) {
+    if (isDragging) {
+      // dragging card keeps glow but does NOT run hover logic
+      setIsHovering(false);
+      activeGlowId = id;
+      return;
+    }
+
+    if (hoverFrozen) {
       setIsHovering(false);
       return;
     }
@@ -186,9 +229,12 @@ const Card: React.FC<CardProps> = ({
     setIsHovering(isNear);
 
     if (!isNear) {
+      if (activeGlowId === id) activeGlowId = null;
       resetHoverEffects();
       return;
     }
+
+    activeGlowId = id;
 
     const xCentered = (clientX - (rect.left + rect.width / 2)) / rect.width;
     const yCentered = (clientY - (rect.top + rect.height / 2)) / rect.height;
@@ -207,7 +253,7 @@ const Card: React.FC<CardProps> = ({
 
     setGlowX(isFlipped ? -followX : followX);
     setGlowY(followY);
-  }, [pointer, hoverFrozen, isDragging, isFlipped]);
+  }, [pointer, hoverFrozen, isDragging, isFlipped, id]);
 
   function resetHoverEffects() {
     setIsHovering(false);
@@ -224,10 +270,14 @@ const Card: React.FC<CardProps> = ({
   const shadowBlur = isDragging ? 40 : 25;
   const shadowSize = isDragging ? 50 : 35;
 
-  const dynamicShadow = `
-    ${shadowOffsetX}px ${shadowOffsetY}px ${shadowBlur}px rgba(0,0,0,0.45),
-    0 0 ${shadowSize}px rgba(0,0,0,0.35)
-  `;
+  const dynamicShadow = inDeck
+    ? "none"
+    : `
+      ${shadowOffsetX}px ${shadowOffsetY}px ${shadowBlur}px rgba(0,0,0,0.45),
+      0 0 ${shadowSize}px rgba(0,0,0,0.35)
+    `;
+
+  const shouldGlow = (isDragging || isHovering) && activeGlowId === id;
 
   return (
     <div
@@ -240,7 +290,7 @@ const Card: React.FC<CardProps> = ({
         zIndex,
       }}
     >
-      {isHovering && (
+      {shouldGlow && (
         <div
           style={{
             position: "absolute",
