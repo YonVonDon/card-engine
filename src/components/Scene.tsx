@@ -15,17 +15,8 @@ const Scene: React.FC = () => {
   const [idleSpeed, setIdleSpeed] = useState(1);
 
   const [cards, setCards] = useState<
-    { id: string; x: number; y: number; z: number; flipped?: boolean; startDragging?: boolean }[]
+    { id: string; x: number; y: number; z: number }[]
   >([]);
-
-  const [deckCards, setDeckCards] = useState<string[]>([]);
-
-  const deckZone = {
-    x: window.innerWidth - CARD_WIDTH - 200,
-    y: window.innerHeight - CARD_HEIGHT - 40,
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
-  };
 
   function addCard() {
     const id = Math.random().toString(36).slice(2);
@@ -77,71 +68,12 @@ const Scene: React.FC = () => {
   function handleDragStart(id: string) {
     bringToFront(id);
     setActiveDragId(id);
-
-    if (deckCards.includes(id)) {
-      setDeckCards(prev => prev.filter(c => c !== id));
-    }
-
-    setCards(prev =>
-      prev.map(c =>
-        c.id === id
-          ? {
-              ...c,
-              x: pointer.x - CARD_WIDTH / 2,
-              y: pointer.y - CARD_HEIGHT / 2,
-              z: 20000,
-              startDragging: true,
-            }
-          : c
-      )
-    );
   }
 
   function handlePositionChange(id: string, x: number, y: number) {
     setCards(prev =>
       prev.map(c =>
         c.id === id ? { ...c, x, y } : c
-      )
-    );
-  }
-
-  function handleFlipChange(id: string, flipped: boolean) {
-    setCards(prev =>
-      prev.map(c =>
-        c.id === id ? { ...c, flipped } : c
-      )
-    );
-  }
-
-  function handleDragEnd(id: string, x: number, y: number) {
-    const cx = x + CARD_WIDTH / 2;
-    const cy = y + CARD_HEIGHT / 2;
-
-    const insideDeck =
-      cx > deckZone.x &&
-      cx < deckZone.x + deckZone.width &&
-      cy > deckZone.y &&
-      cy < deckZone.y + deckZone.height;
-
-    if (insideDeck) {
-      setDeckCards(prev => [...prev, id]);
-    }
-
-    setActiveDragId(null);
-
-    setCards(prev =>
-      prev.map(c =>
-        c.id === id
-          ? {
-              ...c,
-              z: (() => {
-                const freeCards = prev.filter(fc => !deckCards.includes(fc.id));
-                const maxFreeZ = Math.max(...freeCards.map(fc => fc.z), 0);
-                return maxFreeZ + 1;
-              })(),
-              startDragging: false,
-            }
-          : c
       )
     );
   }
@@ -158,6 +90,7 @@ const Scene: React.FC = () => {
         overflow: "hidden",
       }}
     >
+      {/* ADD CARD BUTTON */}
       <button
         onClick={addCard}
         style={{
@@ -176,6 +109,7 @@ const Scene: React.FC = () => {
         + Add Card
       </button>
 
+      {/* IDLE TOGGLE */}
       <button
         onClick={() => setIdleEnabled(prev => !prev)}
         style={{
@@ -195,6 +129,7 @@ const Scene: React.FC = () => {
         Idle: {idleEnabled ? "On" : "Off"}
       </button>
 
+      {/* IDLE SPEED SLIDER */}
       <div
         style={{
           position: "absolute",
@@ -217,79 +152,30 @@ const Scene: React.FC = () => {
         />
       </div>
 
-      <div
-        style={{
-          position: "absolute",
-          left: deckZone.x,
-          top: deckZone.y,
-          width: deckZone.width,
-          height: deckZone.height,
-          border: "2px dashed rgba(255,255,255,0.3)",
-          borderRadius: "10px",
-          pointerEvents: "none",
-          opacity: 0.5,
-        }}
-      />
+      {/* CARDS */}
+      {cards.map(card => {
+        const isTop = hoveredCardId === card.id;
+        const isDragging = activeDragId === card.id;
 
-      {deckCards
-        .map(id => cards.find(c => c.id === id))
-        .filter(Boolean)
-        .map((card, index) => {
-          const x = deckZone.x + index * 5;
-          const y = deckZone.y - index * 4;
+        const effectivePointer =
+          isDragging || isTop ? pointer : { x: -99999, y: -99999 };
 
-          const isDragging = activeDragId === card!.id;
-
-          return (
-            <Card
-              key={card!.id}
-              id={card!.id}
-              initialX={x}
-              initialY={y}
-              pointer={pointer}
-              onDragStart={() => handleDragStart(card!.id)}
-              onDragEnd={(newX, newY) => handleDragEnd(card!.id, newX, newY)}
-              onPositionChange={() => {}}
-              onFlipChange={flipped => handleFlipChange(card!.id, flipped)}
-              zIndex={isDragging ? 99999 : 10000 + index}
-              idleEnabled={false}
-              idleSpeed={idleSpeed}
-              flipped={card!.flipped}
-              inDeck={true}
-            />
-          );
-        })}
-
-      {cards
-        .filter(c => !deckCards.includes(c.id))
-        .sort((a, b) => a.z - b.z)
-        .map(card => {
-          const isTop = hoveredCardId === card.id;
-          const isDragging = activeDragId === card.id;
-
-          const effectivePointer =
-            isDragging || isTop ? pointer : { x: -99999, y: -99999 };
-
-          return (
-            <Card
-              key={card.id}
-              id={card.id}
-              initialX={card.x}
-              initialY={card.y}
-              pointer={effectivePointer}
-              startDragging={card.startDragging}
-              onDragStart={() => handleDragStart(card.id)}
-              onDragEnd={(newX, newY) => handleDragEnd(card.id, newX, newY)}
-              onPositionChange={(x, y) => handlePositionChange(card.id, x, y)}
-              onFlipChange={flipped => handleFlipChange(card.id, flipped)}
-              zIndex={isDragging ? 99999 : card.z}
-              idleEnabled={idleEnabled}
-              idleSpeed={idleSpeed}
-              flipped={card.flipped}
-              inDeck={false}
-            />
-          );
-        })}
+        return (
+          <Card
+            key={card.id}
+            id={card.id}
+            initialX={card.x}
+            initialY={card.y}
+            pointer={effectivePointer}
+            isHovering={isTop}       
+            onDragStart={() => handleDragStart(card.id)}
+            onPositionChange={(x, y) => handlePositionChange(card.id, x, y)}
+            zIndex={card.z}
+            idleEnabled={idleEnabled}
+            idleSpeed={idleSpeed}
+          />
+        );
+      })}
     </div>
   );
 };
