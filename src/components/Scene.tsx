@@ -1,8 +1,18 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Card from "./Card";
+import DeckCard, { DECK_WIDTH, DECK_HEIGHT } from "./DeckCard";
 
 const CARD_WIDTH = 300;
 const CARD_HEIGHT = 400;
+
+interface CardData {
+  id: string;
+  x: number;
+  y: number;
+  z: number;
+  inDeck: boolean;
+  deckIndex?: number;
+}
 
 const Scene: React.FC = () => {
   const sceneRef = useRef<HTMLDivElement>(null);
@@ -11,19 +21,70 @@ const Scene: React.FC = () => {
   const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
-  const [idleEnabled, setIdleEnabled] = useState(true);
-  const [idleSpeed, setIdleSpeed] = useState(1);
+  const [cards, setCards] = useState<CardData[]>([]);
 
-  const [cards, setCards] = useState<
-    { id: string; x: number; y: number; z: number }[]
-  >([]);
+  const [deckX, setDeckX] = useState(window.innerWidth - DECK_WIDTH - 40);
+  const [deckY, setDeckY] = useState(window.innerHeight - DECK_HEIGHT - 40);
+
+  const DECK_INTAKE_RADIUS = 260;
+  const [deckIntakeCardId, setDeckIntakeCardId] = useState<string | null>(null);
+
+  const [deckIdlePhase, setDeckIdlePhase] = useState(0);
+
+  useEffect(() => {
+    let frame: number;
+    function animate() {
+      setDeckIdlePhase(p => p + 0.015);
+      frame = requestAnimationFrame(animate);
+    }
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   function addCard() {
     const id = Math.random().toString(36).slice(2);
     const x = Math.random() * (window.innerWidth - CARD_WIDTH);
     const y = Math.random() * (window.innerHeight - CARD_HEIGHT);
 
-    setCards(prev => [...prev, { id, x, y, z: prev.length + 1 }]);
+    setCards(prev => [
+      ...prev,
+      {
+        id,
+        x,
+        y,
+        z: prev.length + 1,
+        inDeck: false,
+      },
+    ]);
+  }
+
+  function getDeckOffset(deckX: number, deckY: number, deckIndex: number) {
+    const centerX = deckX + DECK_WIDTH / 2;
+    const centerY = deckY + DECK_HEIGHT / 2;
+
+    const screenW = window.innerWidth;
+    const screenH = window.innerHeight;
+
+    const horizontal = centerX < screenW / 2 ? "right" : "left";
+    const vertical = centerY < screenH / 2 ? "down" : "up";
+
+    const baseOffsetX = 14;
+    const baseOffsetY = 10;
+
+    const offsetX =
+      horizontal === "right"
+        ? -baseOffsetX * (deckIndex + 1)
+        : baseOffsetX * (deckIndex + 1);
+
+    const offsetY =
+      vertical === "down"
+        ? -baseOffsetY * (deckIndex + 1)
+        : baseOffsetY * (deckIndex + 1);
+
+    return {
+      x: centerX - CARD_WIDTH / 2 + offsetX,
+      y: centerY - CARD_HEIGHT / 2 + offsetY,
+    };
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
@@ -53,7 +114,42 @@ const Scene: React.FC = () => {
       }
     }
 
+    const deckLeft = deckX;
+    const deckRight = deckX + DECK_WIDTH;
+    const deckTop = deckY;
+    const deckBottom = deckY + DECK_HEIGHT;
+
+    const deckInside =
+      px > deckLeft &&
+      px < deckRight &&
+      py > deckTop &&
+      py < deckBottom;
+
+    // FIX: deck no longer overrides card hover
+    // if (deckInside && topCard === null) {
+    //   topCard = "DECK_CARD";
+    // }
+
     setHoveredCardId(topCard);
+
+    let intakeCandidate: string | null = null;
+
+    for (const card of cards) {
+      if (!card.inDeck && activeDragId === card.id) {
+        const deckCenterX = deckX + DECK_WIDTH / 2;
+        const deckCenterY = deckY + DECK_HEIGHT / 2;
+
+        const dx = pointer.x - deckCenterX;
+        const dy = pointer.y - deckCenterY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < DECK_INTAKE_RADIUS) {
+          intakeCandidate = card.id;
+        }
+      }
+    }
+
+    setDeckIntakeCardId(intakeCandidate);
   }
 
   function bringToFront(id: string) {
@@ -78,6 +174,41 @@ const Scene: React.FC = () => {
     );
   }
 
+  function moveCardToDeck(id: string) {
+    setCards(prev => {
+      const deckCards = prev.filter(c => c.inDeck);
+
+      const highestZ = Math.max(...prev.map(c => c.z));
+      const nextZ = highestZ + 1;
+
+      const nextIndex = deckCards.length;
+
+      return prev.map(c =>
+        c.id === id
+          ? {
+              ...c,
+              inDeck: true,
+              deckIndex: nextIndex,
+              z: nextZ,
+            }
+          : c
+      );
+    });
+  }
+
+  useEffect(() => {
+    function handlePointerUp() {
+      if (deckIntakeCardId) {
+        moveCardToDeck(deckIntakeCardId);
+        setDeckIntakeCardId(null);
+      }
+      setActiveDragId(null);
+    }
+
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => window.removeEventListener("pointerup", handlePointerUp);
+  }, [deckIntakeCardId]);
+
   return (
     <div
       ref={sceneRef}
@@ -90,7 +221,6 @@ const Scene: React.FC = () => {
         overflow: "hidden",
       }}
     >
-      {/* ADD CARD BUTTON */}
       <button
         onClick={addCard}
         style={{
@@ -109,56 +239,46 @@ const Scene: React.FC = () => {
         + Add Card
       </button>
 
-      {/* IDLE TOGGLE */}
-      <button
-        onClick={() => setIdleEnabled(prev => !prev)}
-        style={{
-          position: "absolute",
-          top: 20,
-          left: 160,
-          padding: "12px 20px",
-          fontSize: "18px",
-          borderRadius: "10px",
-          background: idleEnabled ? "#00c853" : "#d32f2f",
-          color: "white",
-          border: "none",
-          cursor: "pointer",
-          zIndex: 9999,
-        }}
-      >
-        Idle: {idleEnabled ? "On" : "Off"}
-      </button>
-
-      {/* IDLE SPEED SLIDER */}
-      <div
-        style={{
-          position: "absolute",
-          top: 20,
-          left: 320,
-          zIndex: 9999,
-          color: "white",
-          fontSize: "16px",
-        }}
-      >
-        <div>Idle Speed</div>
-        <input
-          type="range"
-          min="0"
-          max="3"
-          step="0.1"
-          value={idleSpeed}
-          onChange={(e) => setIdleSpeed(parseFloat(e.target.value))}
-          style={{ width: "150px" }}
+      {deckIntakeCardId && (
+        <div
+          style={{
+            position: "absolute",
+            left: deckX + DECK_WIDTH / 2 - DECK_INTAKE_RADIUS,
+            top: deckY + DECK_HEIGHT / 2 - DECK_INTAKE_RADIUS,
+            width: DECK_INTAKE_RADIUS * 2,
+            height: DECK_INTAKE_RADIUS * 2,
+            borderRadius: "50%",
+            border: "6px solid rgba(0,200,255,0.6)",
+            boxShadow: "0 0 40px rgba(0,200,255,0.6)",
+            pointerEvents: "none",
+            zIndex: 9997,
+          }}
         />
-      </div>
+      )}
 
-      {/* CARDS */}
+      <DeckCard
+        x={deckX}
+        y={deckY}
+        pointer={pointer}
+        isHovering={hoveredCardId === "DECK_CARD"}
+        onDragStart={() => {}}
+        onPositionChange={(x, y) => {
+          setDeckX(x);
+          setDeckY(y);
+        }}
+      />
+
       {cards.map(card => {
         const isTop = hoveredCardId === card.id;
         const isDragging = activeDragId === card.id;
 
         const effectivePointer =
           isDragging || isTop ? pointer : { x: -99999, y: -99999 };
+
+        const snapTarget =
+          card.inDeck && card.deckIndex !== undefined
+            ? getDeckOffset(deckX, deckY, card.deckIndex)
+            : undefined;
 
         return (
           <Card
@@ -167,12 +287,13 @@ const Scene: React.FC = () => {
             initialX={card.x}
             initialY={card.y}
             pointer={effectivePointer}
-            isHovering={isTop}       
+            isHovering={isTop}
             onDragStart={() => handleDragStart(card.id)}
             onPositionChange={(x, y) => handlePositionChange(card.id, x, y)}
             zIndex={card.z}
-            idleEnabled={idleEnabled}
-            idleSpeed={idleSpeed}
+            snapTarget={snapTarget}
+            inDeck={card.inDeck}
+            deckIdlePhase={deckIdlePhase}
           />
         );
       })}
