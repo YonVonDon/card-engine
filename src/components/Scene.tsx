@@ -29,12 +29,15 @@ const Scene: React.FC = () => {
   const DECK_INTAKE_RADIUS = 260;
   const [deckIntakeCardId, setDeckIntakeCardId] = useState<string | null>(null);
 
+  // ⭐ NEW: Scene-controlled idle phases
   const [deckIdlePhase, setDeckIdlePhase] = useState(0);
+  const [freeIdlePhase, setFreeIdlePhase] = useState(0);
 
   useEffect(() => {
     let frame: number;
     function animate() {
       setDeckIdlePhase(p => p + 0.015);
+      setFreeIdlePhase(p => p + 0.02);
       frame = requestAnimationFrame(animate);
     }
     frame = requestAnimationFrame(animate);
@@ -113,22 +116,6 @@ const Scene: React.FC = () => {
         topCard = card.id;
       }
     }
-
-    const deckLeft = deckX;
-    const deckRight = deckX + DECK_WIDTH;
-    const deckTop = deckY;
-    const deckBottom = deckY + DECK_HEIGHT;
-
-    const deckInside =
-      px > deckLeft &&
-      px < deckRight &&
-      py > deckTop &&
-      py < deckBottom;
-
-    // FIX: deck no longer overrides card hover
-    // if (deckInside && topCard === null) {
-    //   topCard = "DECK_CARD";
-    // }
 
     setHoveredCardId(topCard);
 
@@ -239,23 +226,6 @@ const Scene: React.FC = () => {
         + Add Card
       </button>
 
-      {deckIntakeCardId && (
-        <div
-          style={{
-            position: "absolute",
-            left: deckX + DECK_WIDTH / 2 - DECK_INTAKE_RADIUS,
-            top: deckY + DECK_HEIGHT / 2 - DECK_INTAKE_RADIUS,
-            width: DECK_INTAKE_RADIUS * 2,
-            height: DECK_INTAKE_RADIUS * 2,
-            borderRadius: "50%",
-            border: "6px solid rgba(0,200,255,0.6)",
-            boxShadow: "0 0 40px rgba(0,200,255,0.6)",
-            pointerEvents: "none",
-            zIndex: 9997,
-          }}
-        />
-      )}
-
       <DeckCard
         x={deckX}
         y={deckY}
@@ -272,13 +242,20 @@ const Scene: React.FC = () => {
         const isTop = hoveredCardId === card.id;
         const isDragging = activeDragId === card.id;
 
-        const effectivePointer =
-          isDragging || isTop ? pointer : { x: -99999, y: -99999 };
+        // ⭐ Smooth snap only until close enough
+        let snapTarget: { x: number; y: number } | undefined = undefined;
 
-        const snapTarget =
-          card.inDeck && card.deckIndex !== undefined
-            ? getDeckOffset(deckX, deckY, card.deckIndex)
-            : undefined;
+        if (card.inDeck && card.deckIndex !== undefined && !isDragging) {
+          const target = getDeckOffset(deckX, deckY, card.deckIndex);
+
+          const dx = card.x - target.x;
+          const dy = card.y - target.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist > 1.5) {
+            snapTarget = target;
+          }
+        }
 
         return (
           <Card
@@ -286,7 +263,8 @@ const Scene: React.FC = () => {
             id={card.id}
             initialX={card.x}
             initialY={card.y}
-            pointer={effectivePointer}
+            realPointer={pointer}
+            fakePointer={isDragging || isTop ? pointer : { x: -99999, y: -99999 }}
             isHovering={isTop}
             onDragStart={() => handleDragStart(card.id)}
             onPositionChange={(x, y) => handlePositionChange(card.id, x, y)}
@@ -294,6 +272,7 @@ const Scene: React.FC = () => {
             snapTarget={snapTarget}
             inDeck={card.inDeck}
             deckIdlePhase={deckIdlePhase}
+            freeIdlePhase={freeIdlePhase}
           />
         );
       })}

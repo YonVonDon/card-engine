@@ -4,30 +4,43 @@ interface CardProps {
   id: string;
   initialX?: number;
   initialY?: number;
-  pointer: { x: number; y: number };
+
+  realPointer: { x: number; y: number };
+  fakePointer: { x: number; y: number };
+
   isHovering: boolean;
   onDragStart?: () => void;
   onPositionChange?: (x: number, y: number) => void;
   zIndex?: number;
   snapTarget?: { x: number; y: number };
   inDeck?: boolean;
-  deckIdlePhase?: number;
+
+  // ⭐ NEW: Scene-controlled idle phases
+  deckIdlePhase: number;
+  freeIdlePhase: number;
 }
 
 const DRAG_THRESHOLD = 2;
+const CARD_WIDTH = 300;
+const CARD_HEIGHT = 400;
 
 const Card: React.FC<CardProps> = ({
   id,
   initialX = 300,
   initialY = 200,
-  pointer,
+
+  realPointer,
+  fakePointer,
+
   isHovering,
   onDragStart,
   onPositionChange,
   zIndex = 1,
   snapTarget,
   inDeck = false,
-  deckIdlePhase = 0,
+
+  deckIdlePhase,
+  freeIdlePhase,
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -47,40 +60,24 @@ const Card: React.FC<CardProps> = ({
 
   const [isFlipped, setIsFlipped] = useState(false);
 
-  const [idleOffsetX, setIdleOffsetX] = useState(0);
-  const [idleOffsetY, setIdleOffsetY] = useState(0);
+  // ⭐ Idle offsets now come from Scene
+  const idleOffsetX = inDeck
+    ? Math.sin(deckIdlePhase) * 3
+    : Math.sin(freeIdlePhase) * 3;
 
-  useEffect(() => {
-    let t = 0;
-    let frame: number;
+  const idleOffsetY = inDeck
+    ? Math.cos(deckIdlePhase * 0.8) * 6
+    : Math.cos(freeIdlePhase * 0.8) * 6;
 
-    function animate() {
-      t += 0.015;
-
-      if (inDeck) {
-        setIdleOffsetX(Math.sin(deckIdlePhase) * 3);
-        setIdleOffsetY(Math.cos(deckIdlePhase * 0.8) * 6);
-      } else if (!isDragging && !isHovering) {
-        setIdleOffsetX(Math.sin(t) * 3);
-        setIdleOffsetY(Math.cos(t * 0.8) * 6);
-      } else {
-        setIdleOffsetX(0);
-        setIdleOffsetY(0);
-      }
-
-      frame = requestAnimationFrame(animate);
-    }
-
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
-  }, [isDragging, isHovering, inDeck, deckIdlePhase]);
-
+  // -------------------------------------------------------
+  // POINTER DOWN — uses REAL pointer
+  // -------------------------------------------------------
   function onPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return;
 
     const rect = cardRef.current!.getBoundingClientRect();
 
-    setClickStart({ x: pointer.x, y: pointer.y });
+    setClickStart({ x: realPointer.x, y: realPointer.y });
     setIsDragging(false);
 
     setDragOffset({
@@ -89,6 +86,9 @@ const Card: React.FC<CardProps> = ({
     });
   }
 
+  // -------------------------------------------------------
+  // POINTER UP
+  // -------------------------------------------------------
   useEffect(() => {
     function handlePointerUp() {
       setIsDragging(false);
@@ -100,6 +100,9 @@ const Card: React.FC<CardProps> = ({
     return () => window.removeEventListener("pointerup", handlePointerUp);
   }, []);
 
+  // -------------------------------------------------------
+  // RIGHT CLICK FLIP
+  // -------------------------------------------------------
   function onRightClick(e: React.MouseEvent) {
     e.preventDefault();
 
@@ -115,20 +118,31 @@ const Card: React.FC<CardProps> = ({
     });
   }
 
+  // -------------------------------------------------------
+  // DRAG THRESHOLD — uses REAL pointer
+  // -------------------------------------------------------
   useEffect(() => {
     if (!clickStart) return;
 
-    const dx = Math.abs(pointer.x - clickStart.x);
-    const dy = Math.abs(pointer.y - clickStart.y);
+    const dx = Math.abs(realPointer.x - clickStart.x);
+    const dy = Math.abs(realPointer.y - clickStart.y);
 
     if (!isDragging && (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD)) {
       setIsDragging(true);
       onDragStart?.();
     }
-  }, [pointer, clickStart, isDragging, onDragStart]);
+  }, [realPointer, clickStart, isDragging, onDragStart]);
 
+  // -------------------------------------------------------
+  // HOVER TILT + GLOW — uses FAKE pointer
+  // -------------------------------------------------------
   useEffect(() => {
-    if (!isHovering || isDragging) {
+    if (isDragging) {
+      resetHoverEffects();
+      return;
+    }
+
+    if (!isHovering) {
       resetHoverEffects();
       return;
     }
@@ -137,8 +151,8 @@ const Card: React.FC<CardProps> = ({
     if (!card) return;
 
     const rect = card.getBoundingClientRect();
-    const xCentered = (pointer.x - (rect.left + rect.width / 2)) / rect.width;
-    const yCentered = (pointer.y - (rect.top + rect.height / 2)) / rect.height;
+    const xCentered = (fakePointer.x - (rect.left + rect.width / 2)) / rect.width;
+    const yCentered = (fakePointer.y - (rect.top + rect.height / 2)) / rect.height;
 
     const rotY = xCentered * 15;
     const rotX = -yCentered * 15;
@@ -154,7 +168,7 @@ const Card: React.FC<CardProps> = ({
 
     setGlowX(isFlipped ? -followX : followX);
     setGlowY(followY);
-  }, [isHovering, pointer, isDragging, isFlipped]);
+  }, [isHovering, fakePointer, isDragging, isFlipped]);
 
   function resetHoverEffects() {
     setTiltX(0);
@@ -165,13 +179,16 @@ const Card: React.FC<CardProps> = ({
     setGlowFollowY(0);
   }
 
+  // -------------------------------------------------------
+  // DRAG + SNAP — uses REAL pointer
+  // -------------------------------------------------------
   useEffect(() => {
     let frame: number;
 
     function animate() {
       if (isDragging) {
-        const targetX = pointer.x - dragOffset.x;
-        const targetY = pointer.y - dragOffset.y;
+        const targetX = realPointer.x - dragOffset.x;
+        const targetY = realPointer.y - dragOffset.y;
 
         const LERP = 0.12;
 
@@ -195,8 +212,11 @@ const Card: React.FC<CardProps> = ({
 
     frame = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(frame);
-  }, [isDragging, pointer, dragOffset, position, onPositionChange, snapTarget]);
+  }, [isDragging, realPointer, dragOffset, position, onPositionChange, snapTarget]);
 
+  // -------------------------------------------------------
+  // SHADOW
+  // -------------------------------------------------------
   const shadowOffsetX = -tiltY * 2;
   const shadowOffsetY = tiltX * 2;
   const shadowBlur = isDragging ? 40 : 25;
@@ -213,8 +233,8 @@ const Card: React.FC<CardProps> = ({
         position: "absolute",
         left: position.x + idleOffsetX,
         top: position.y + idleOffsetY,
-        width: "300px",
-        height: "400px",
+        width: `${CARD_WIDTH}px`,
+        height: `${CARD_HEIGHT}px`,
         zIndex,
       }}
     >
