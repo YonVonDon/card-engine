@@ -2,8 +2,36 @@ import React, { useState, useRef, useEffect } from "react";
 import Card from "./Card";
 import DeckCard, { DECK_WIDTH, DECK_HEIGHT } from "./DeckCard";
 
-const CARD_WIDTH = 300;
-const CARD_HEIGHT = 400;
+const CARD_WIDTH = 315;
+const CARD_HEIGHT = 533;
+
+const MAJOR_ARCANA = [
+  "sm_RWSa-T-00","sm_RWSa-T-01","sm_RWSa-T-02","sm_RWSa-T-03","sm_RWSa-T-04",
+  "sm_RWSa-T-05","sm_RWSa-T-06","sm_RWSa-T-07","sm_RWSa-T-08","sm_RWSa-T-09",
+  "sm_RWSa-T-10","sm_RWSa-T-11","sm_RWSa-T-12","sm_RWSa-T-13","sm_RWSa-T-14",
+  "sm_RWSa-T-15","sm_RWSa-T-16","sm_RWSa-T-17","sm_RWSa-T-18","sm_RWSa-T-19",
+  "sm_RWSa-T-20","sm_RWSa-T-21",
+];
+
+const MINOR_ARCANA = [
+  "sm_RWSa-C-0A","sm_RWSa-C-02","sm_RWSa-C-03","sm_RWSa-C-04","sm_RWSa-C-05",
+  "sm_RWSa-C-06","sm_RWSa-C-07","sm_RWSa-C-08","sm_RWSa-C-09","sm_RWSa-C-10",
+  "sm_RWSa-C-J1","sm_RWSa-C-J2","sm_RWSa-C-QU","sm_RWSa-C-KI",
+
+  "sm_RWSa-P-0A","sm_RWSa-P-02","sm_RWSa-P-03","sm_RWSa-P-04","sm_RWSa-P-05",
+  "sm_RWSa-P-06","sm_RWSa-P-07","sm_RWSa-P-08","sm_RWSa-P-09","sm_RWSa-P-10",
+  "sm_RWSa-P-J1","sm_RWSa-P-J2","sm_RWSa-P-QU","sm_RWSa-P-KI",
+
+  "sm_RWSa-S-0A","sm_RWSa-S-02","sm_RWSa-S-03","sm_RWSa-S-04","sm_RWSa-S-05",
+  "sm_RWSa-S-06","sm_RWSa-S-07","sm_RWSa-S-08","sm_RWSa-S-09","sm_RWSa-S-10",
+  "sm_RWSa-S-J1","sm_RWSa-S-J2","sm_RWSa-S-QU","sm_RWSa-S-KI",
+
+  "sm_RWSa-W-0A","sm_RWSa-W-02","sm_RWSa-W-03","sm_RWSa-W-04","sm_RWSa-W-05",
+  "sm_RWSa-W-06","sm_RWSa-W-07","sm_RWSa-W-08","sm_RWSa-W-09","sm_RWSa-W-10",
+  "sm_RWSa-W-J1","sm_RWSa-W-J2","sm_RWSa-W-QU","sm_RWSa-W-KI",
+];
+
+const ALL_TAROT = [...MAJOR_ARCANA, ...MINOR_ARCANA];
 
 interface CardData {
   id: string;
@@ -23,13 +51,14 @@ const Scene: React.FC = () => {
 
   const [cards, setCards] = useState<CardData[]>([]);
 
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
   const [deckX, setDeckX] = useState(window.innerWidth - DECK_WIDTH - 40);
   const [deckY, setDeckY] = useState(window.innerHeight - DECK_HEIGHT - 40);
 
   const DECK_INTAKE_RADIUS = 260;
   const [deckIntakeCardId, setDeckIntakeCardId] = useState<string | null>(null);
 
-  // ⭐ NEW: Scene-controlled idle phases
   const [deckIdlePhase, setDeckIdlePhase] = useState(0);
   const [freeIdlePhase, setFreeIdlePhase] = useState(0);
 
@@ -44,8 +73,29 @@ const Scene: React.FC = () => {
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  useEffect(() => {
+    const firstFive = MAJOR_ARCANA.slice(0, 5);
+    setCards(
+      firstFive.map((id, index) => ({
+        id,
+        x: 120 + index * 60,
+        y: 140 + index * 20,
+        z: index + 1,
+        inDeck: false,
+      }))
+    );
+  }, []);
+
+  function getIdleOffsetFromId(id: string) {
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) {
+      hash = (hash * 31 + id.charCodeAt(i)) % 10000;
+    }
+    return (hash / 10000) * Math.PI * 2;
+  }
+
   function addCard() {
-    const id = Math.random().toString(36).slice(2);
+    const id = ALL_TAROT[Math.floor(Math.random() * ALL_TAROT.length)];
     const x = Math.random() * (window.innerWidth - CARD_WIDTH);
     const y = Math.random() * (window.innerHeight - CARD_HEIGHT);
 
@@ -62,33 +112,20 @@ const Scene: React.FC = () => {
   }
 
   function getDeckOffset(deckX: number, deckY: number, deckIndex: number) {
-    const centerX = deckX + DECK_WIDTH / 2;
-    const centerY = deckY + DECK_HEIGHT / 2;
+  // Always anchor to the TOP‑LEFT of the DeckCard
+  const baseX = deckX + (DECK_WIDTH - CARD_WIDTH) / 2;
+  const baseY = deckY + (DECK_HEIGHT - CARD_HEIGHT) / 2;
 
-    const screenW = window.innerWidth;
-    const screenH = window.innerHeight;
+  // Fixed offset direction: up + right
+  const offsetX = 14 * deckIndex;   // expose left edge
+  const offsetY = -12 * deckIndex;  // expose bottom edge
 
-    const horizontal = centerX < screenW / 2 ? "right" : "left";
-    const vertical = centerY < screenH / 2 ? "down" : "up";
+  return {
+    x: baseX + offsetX,
+    y: baseY + offsetY,
+  };
+}
 
-    const baseOffsetX = 14;
-    const baseOffsetY = 10;
-
-    const offsetX =
-      horizontal === "right"
-        ? -baseOffsetX * (deckIndex + 1)
-        : baseOffsetX * (deckIndex + 1);
-
-    const offsetY =
-      vertical === "down"
-        ? -baseOffsetY * (deckIndex + 1)
-        : baseOffsetY * (deckIndex + 1);
-
-    return {
-      x: centerX - CARD_WIDTH / 2 + offsetX,
-      y: centerY - CARD_HEIGHT / 2 + offsetY,
-    };
-  }
 
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
     const px = e.clientX;
@@ -100,16 +137,16 @@ const Scene: React.FC = () => {
     let topZ = -Infinity;
 
     for (const card of cards) {
-      const left = card.x;
-      const right = card.x + CARD_WIDTH;
-      const top = card.y;
-      const bottom = card.y + CARD_HEIGHT;
+      const ref = cardRefs.current[card.id];
+      if (!ref) continue;
+
+      const rect = ref.getBoundingClientRect();
 
       const inside =
-        px > left &&
-        px < right &&
-        py > top &&
-        py < bottom;
+        px >= rect.left &&
+        px <= rect.right &&
+        py >= rect.top &&
+        py <= rect.bottom;
 
       if (inside && card.z > topZ) {
         topZ = card.z;
@@ -148,8 +185,74 @@ const Scene: React.FC = () => {
     });
   }
 
+  // -------------------------------------------------------
+// DEQUEUE (remove from deck)
+// -------------------------------------------------------
+function dequeue(cardId: string) {
+  setCards(prev => {
+    // keep all other deck cards
+    const deckCards = prev.filter(c => c.inDeck && c.id !== cardId);
+
+    // ⭐ sort by existing deckIndex so visual order is preserved
+    const sorted = deckCards
+      .slice()
+      .sort((a, b) => (a.deckIndex ?? 0) - (b.deckIndex ?? 0));
+
+    // ⭐ reindex in that order: only cards above the removed one shift down/left
+    const reindexed = sorted.map((c, i) => ({
+      ...c,
+      deckIndex: i,
+    }));
+
+    return prev.map(c => {
+      if (c.id === cardId) {
+        // removed card leaves the deck
+        return { ...c, inDeck: false, deckIndex: undefined };
+      }
+      const updated = reindexed.find(d => d.id === c.id);
+      return updated ? updated : c;
+    });
+  });
+}
+
+
+  function enqueue(cardId: string) {
+    setCards(prev => {
+      const deckCards = prev.filter(c => c.inDeck);
+      const nextIndex = deckCards.length;
+
+      return prev.map(c =>
+        c.id === cardId
+          ? { ...c, inDeck: true, deckIndex: nextIndex }
+          : c
+      );
+    });
+  }
+
+  function normalizeDeck() {
+    setCards(prev => {
+      const deckCards = prev.filter(c => c.inDeck);
+
+      const sorted = deckCards
+        .sort((a, b) => a.deckIndex! - b.deckIndex!)
+        .map((c, i) => ({ ...c, deckIndex: i }));
+
+      return prev.map(c => {
+        const updated = sorted.find(d => d.id === c.id);
+        return updated ? updated : c;
+      });
+    });
+  }
+
   function handleDragStart(id: string) {
     bringToFront(id);
+
+    const card = cards.find(c => c.id === id);
+    if (card && card.inDeck) {
+      dequeue(id);
+      normalizeDeck();
+    }
+
     setActiveDragId(id);
   }
 
@@ -161,32 +264,11 @@ const Scene: React.FC = () => {
     );
   }
 
-  function moveCardToDeck(id: string) {
-    setCards(prev => {
-      const deckCards = prev.filter(c => c.inDeck);
-
-      const highestZ = Math.max(...prev.map(c => c.z));
-      const nextZ = highestZ + 1;
-
-      const nextIndex = deckCards.length;
-
-      return prev.map(c =>
-        c.id === id
-          ? {
-              ...c,
-              inDeck: true,
-              deckIndex: nextIndex,
-              z: nextZ,
-            }
-          : c
-      );
-    });
-  }
-
   useEffect(() => {
     function handlePointerUp() {
       if (deckIntakeCardId) {
-        moveCardToDeck(deckIntakeCardId);
+        enqueue(deckIntakeCardId);
+        normalizeDeck();
         setDeckIntakeCardId(null);
       }
       setActiveDragId(null);
@@ -226,11 +308,29 @@ const Scene: React.FC = () => {
         + Add Card
       </button>
 
+      {deckIntakeCardId && (
+        <div
+          style={{
+            position: "absolute",
+            left: deckX + DECK_WIDTH / 2 - DECK_INTAKE_RADIUS,
+            top: deckY + DECK_HEIGHT / 2 - DECK_INTAKE_RADIUS,
+            width: DECK_INTAKE_RADIUS * 2,
+            height: DECK_INTAKE_RADIUS * 2,
+            borderRadius: "50%",
+            border: "6px solid rgba(0,200,255,0.6)",
+            boxShadow: "0 0 40px rgba(0,200,255,0.6)",
+            pointerEvents: "none",
+            zIndex: 9997,
+          }}
+        />
+      )}
+
       <DeckCard
         x={deckX}
         y={deckY}
         pointer={pointer}
         isHovering={hoveredCardId === "DECK_CARD"}
+        deckIdlePhase={deckIdlePhase}
         onDragStart={() => {}}
         onPositionChange={(x, y) => {
           setDeckX(x);
@@ -242,7 +342,6 @@ const Scene: React.FC = () => {
         const isTop = hoveredCardId === card.id;
         const isDragging = activeDragId === card.id;
 
-        // ⭐ Smooth snap only until close enough
         let snapTarget: { x: number; y: number } | undefined = undefined;
 
         if (card.inDeck && card.deckIndex !== undefined && !isDragging) {
@@ -273,6 +372,10 @@ const Scene: React.FC = () => {
             inDeck={card.inDeck}
             deckIdlePhase={deckIdlePhase}
             freeIdlePhase={freeIdlePhase}
+            idleOffset={getIdleOffsetFromId(card.id)}
+            ref={(el: HTMLDivElement | null) => {
+              cardRefs.current[card.id] = el;
+            }}
           />
         );
       })}
